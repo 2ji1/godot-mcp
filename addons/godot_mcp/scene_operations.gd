@@ -1,6 +1,11 @@
 @tool
 extends RefCounted
 
+var value_codec: RefCounted
+
+func _init() -> void:
+    value_codec = preload("res://addons/godot_mcp/value_codec.gd").new()
+
 func current_scene(editor_plugin: EditorPlugin) -> Dictionary:
     var root = editor_plugin.get_editor_interface().get_edited_scene_root()
     if root == null:
@@ -53,10 +58,15 @@ func set_property(editor_plugin: EditorPlugin, node_path: String, property: Stri
         return _error("NODE_NOT_FOUND", "Node path does not exist")
     if not _has_property(node, property):
         return _error("PROPERTY_NOT_FOUND", "Node does not expose the requested property")
+    var decoded = value_codec.decode(value)
+    if not decoded.get("ok", false):
+        var decode_error = decoded.get("error", {})
+        return _error(str(decode_error.get("code", "INVALID_ARGUMENT")), str(decode_error.get("message", "Invalid property value")))
+    var converted_value = decoded["value"]
     var previous = node.get(property)
     var undo = editor_plugin.get_undo_redo()
     undo.create_action("Godot MCP: Set " + property)
-    undo.add_do_property(node, property, value)
+    undo.add_do_property(node, property, converted_value)
     undo.add_undo_property(node, property, previous)
     undo.commit_action()
     return {"nodePath": node_path, "property": property, "value": value}

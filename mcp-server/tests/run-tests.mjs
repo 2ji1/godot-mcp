@@ -3,4 +3,5 @@ import "./protocol.test.mjs";
 import "./godot-bridge.test.mjs";
 import "./tools.test.mjs";
 import "./mutations.test.mjs";
+import "./typed-values.test.mjs";
 import "./runtime.test.mjs";
