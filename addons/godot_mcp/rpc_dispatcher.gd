@@ -4,6 +4,7 @@ extends RefCounted
 var editor_plugin: EditorPlugin
 var authenticated := false
 var token := ""
+var token_error := {}
 var editor_state: RefCounted
 var scene_operations: RefCounted
 var runtime_state: RefCounted
@@ -14,7 +15,12 @@ func _init() -> void:
     runtime_state = preload("res://addons/godot_mcp/runtime_state.gd").new()
 
 func initialize_token() -> bool:
-    return not _get_token().is_empty()
+    var result = preload("res://addons/godot_mcp/user_token.gd").read_token()
+    if result.has("error"):
+        token_error = result["error"]
+        return false
+    token = str(result.get("token", ""))
+    return not token.is_empty()
 
 func handle_json(raw: String) -> Dictionary:
     var parsed = JSON.parse_string(raw)
@@ -31,7 +37,7 @@ func handle_request(request: Dictionary) -> Dictionary:
 
     if method == "bridge.authenticate":
         var supplied = str(params.get("token", ""))
-        if supplied != _get_token():
+        if supplied != token:
             return _failure(request_id, "AUTHENTICATION_FAILED", "Invalid bridge token")
         authenticated = true
         return _success(request_id, {"authenticated": true})
@@ -61,21 +67,6 @@ func handle_request(request: Dictionary) -> Dictionary:
             return _success(request_id, runtime_state.snapshot())
         _:
             return _failure(request_id, "METHOD_NOT_FOUND", "Unknown method: " + method)
-
-func _get_token() -> String:
-    if not token.is_empty():
-        return token
-    var path = ProjectSettings.globalize_path("res://.godot/godot-mcp-token")
-    if FileAccess.file_exists(path):
-        token = FileAccess.get_file_as_string(path).strip_edges()
-    else:
-        var generated_token = str(Time.get_ticks_usec()) + "-" + str(randi())
-        var file = FileAccess.open(path, FileAccess.WRITE)
-        if file == null:
-            return ""
-        file.store_string(generated_token)
-        token = generated_token
-    return token
 
 func _operation_response(request_id: String, result: Dictionary) -> Dictionary:
     if result.has("_error"):
