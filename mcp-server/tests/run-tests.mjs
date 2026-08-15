@@ -5,3 +5,4 @@ import "./tools.test.mjs";
 import "./mutations.test.mjs";
 import "./typed-values.test.mjs";
 import "./runtime.test.mjs";
+import "./project-setup.test.mjs";

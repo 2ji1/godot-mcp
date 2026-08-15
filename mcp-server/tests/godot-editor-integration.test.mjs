@@ -24,12 +24,12 @@ let bridge;
 async function waitFor(predicate, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    if (predicate()) {
+    if (await predicate()) {
       return true;
     }
     await delay(50);
   }
-  return predicate();
+  return await predicate();
 }
 
 before(async () => {
@@ -100,7 +100,15 @@ after(async () => {
 test("creates the token before the first bridge authentication", async () => {
   assert.equal(await waitFor(() => existsSync(tokenPath), 5000), true);
   await bridge.connect();
-  const status = await bridge.request("editor.status", {});
+  let status;
+  assert.equal(
+    await waitFor(async () => {
+      status = await bridge.request("editor.status", {});
+      return status.scenePath === "res://audit_scene.tscn";
+    }, 5000),
+    true,
+    editorOutput
+  );
   assert.match(status.godotVersion, /^4\.7(?:\.1)?-stable/);
 });
 
