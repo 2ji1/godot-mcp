@@ -9,7 +9,8 @@ func _init() -> void:
         "res://addons/godot_mcp/editor_state.gd",
         "res://addons/godot_mcp/scene_operations.gd",
         "res://addons/godot_mcp/runtime_state.gd",
-        "res://addons/godot_mcp/value_codec.gd"
+        "res://addons/godot_mcp/value_codec.gd",
+        "res://addons/godot_mcp/user_token.gd"
     ]
     for script_path in scripts:
         if load(script_path) == null:

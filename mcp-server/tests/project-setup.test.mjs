@@ -1,12 +1,5 @@
 import assert from "node:assert/strict";
-import {
-  existsSync,
-  mkdtempSync,
-  mkdirSync,
-  readFileSync,
-  rmSync,
-  writeFileSync
-} from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { installProject } from "../dist/setup-project.js";
@@ -16,13 +9,7 @@ const sandbox = mkdtempSync(join(tmpdir(), "godot-mcp-project-setup-"));
 function createServerRoot(name) {
   const serverRoot = join(sandbox, name);
   mkdirSync(join(serverRoot, "addons", "godot_mcp"), { recursive: true });
-  mkdirSync(join(serverRoot, "mcp-server", "dist"), { recursive: true });
   writeFileSync(join(serverRoot, "addons", "godot_mcp", "plugin.cfg"), "author=\"2ji1\"\n");
-  writeFileSync(join(serverRoot, "mcp-server", "dist", "index.js"), "");
-  writeFileSync(
-    join(serverRoot, ".godot-mcp.example.json"),
-    '{"host":"127.0.0.1","port":8765,"projectRoot":".","tokenPath":".godot/godot-mcp-token"}\n'
-  );
   return serverRoot;
 }
 
@@ -36,64 +23,68 @@ function createProject(name) {
 try {
   const serverRoot = createServerRoot("server");
   const projectRoot = createProject("project");
-  const godotExecutable = join(sandbox, "Godot.exe");
-  writeFileSync(godotExecutable, "");
+  const tokenPath = join(sandbox, "state", "auth-token");
 
-  installProject({ projectRoot, serverRoot, godotExecutable, force: false });
-
+  const result = installProject({ projectRoot, serverRoot, force: false, repairToken: false, tokenPath });
+  assert.equal(result.projectRoot, projectRoot);
+  assert.equal(result.addonPath, join(projectRoot, "addons", "godot_mcp"));
+  assert.equal(result.tokenPath, tokenPath);
   assert.equal(existsSync(join(projectRoot, "addons", "godot_mcp", "plugin.cfg")), true);
-  assert.equal(existsSync(join(projectRoot, ".godot-mcp.json")), true);
-  const firstConfig = readFileSync(join(projectRoot, ".codex", "config.toml"), "utf8");
-  assert.match(firstConfig, /# BEGIN godot-mcp managed config/);
-  assert.match(firstConfig, /\[mcp_servers\.godot\]/);
-  assert.match(firstConfig, /GODOT_PROJECT_ROOT/);
-  assert.match(firstConfig, /GODOT_EXECUTABLE/);
-
-  writeFileSync(join(projectRoot, ".godot-mcp.json"), "custom\n");
-  writeFileSync(
-    join(projectRoot, ".codex", "config.toml"),
-    `model = "gpt-test"\n\n${firstConfig}`
-  );
-  installProject({ projectRoot, serverRoot, godotExecutable, force: true });
-  const updatedConfig = readFileSync(join(projectRoot, ".codex", "config.toml"), "utf8");
-  assert.match(updatedConfig, /^model = "gpt-test"/);
-  assert.equal(updatedConfig.match(/# BEGIN godot-mcp managed config/g)?.length, 1);
-  assert.equal(readFileSync(join(projectRoot, ".godot-mcp.json"), "utf8"), "custom\n");
+  assert.equal(existsSync(join(projectRoot, ".godot-mcp.json")), false);
+  assert.equal(existsSync(join(projectRoot, ".codex", "config.toml")), false);
+  const firstToken = readFileSync(tokenPath, "utf8").trim();
+  assert.match(firstToken, /^[a-f0-9]{64}$/);
 
   assert.throws(
-    () => installProject({ projectRoot, serverRoot, godotExecutable, force: false }),
+    () => installProject({ projectRoot, serverRoot, force: false, repairToken: false, tokenPath }),
     /already exists/
   );
 
-  const conflictingProject = createProject("conflict");
-  mkdirSync(join(conflictingProject, ".codex"), { recursive: true });
-  writeFileSync(
-    join(conflictingProject, ".codex", "config.toml"),
-    "[mcp_servers.godot]\ncommand = \"custom\"\n"
-  );
+  writeFileSync(join(serverRoot, "addons", "godot_mcp", "plugin.cfg"), "author=\"updated\"\n");
+  installProject({ projectRoot, serverRoot, force: true, repairToken: false, tokenPath });
+  assert.match(readFileSync(join(projectRoot, "addons", "godot_mcp", "plugin.cfg"), "utf8"), /updated/);
+  assert.equal(readFileSync(tokenPath, "utf8").trim(), firstToken);
+
+  writeFileSync(tokenPath, "broken\n", "utf8");
+  const secondProject = createProject("second-project");
   assert.throws(
-    () => installProject({
-      projectRoot: conflictingProject,
-      serverRoot,
-      godotExecutable,
-      force: false
-    }),
-    /unmanaged \[mcp_servers\.godot\]/
+    () => installProject({ projectRoot: secondProject, serverRoot, force: false, repairToken: false, tokenPath }),
+    /TOKEN_INVALID/
+  );
+  const repaired = installProject({
+    projectRoot: secondProject,
+    serverRoot,
+    force: false,
+    repairToken: true,
+    tokenPath
+  });
+  const repairedToken = readFileSync(repaired.tokenPath, "utf8").trim();
+  assert.match(repairedToken, /^[a-f0-9]{64}$/);
+  assert.notEqual(repairedToken, "broken");
+
+  const missingProject = join(sandbox, "missing-project");
+  mkdirSync(missingProject, { recursive: true });
+  assert.throws(
+    () => installProject({ projectRoot: missingProject, serverRoot, force: false, repairToken: false, tokenPath }),
+    /Godot project file does not exist/
   );
 
-  const workspaceRoot = join(sandbox, "workspace");
-  const nestedProject = join(workspaceRoot, "godot-project");
-  mkdirSync(nestedProject, { recursive: true });
-  writeFileSync(join(nestedProject, "project.godot"), "[application]\n");
-  installProject({
-    projectRoot: nestedProject,
-    codexProjectRoot: workspaceRoot,
+  const legacyProject = createProject("legacy-project");
+  mkdirSync(join(legacyProject, ".codex"), { recursive: true });
+  writeFileSync(join(legacyProject, ".godot-mcp.json"), "legacy project config\n");
+  writeFileSync(join(legacyProject, ".codex", "config.toml"), "[mcp_servers.godot]\n");
+  const legacyResult = installProject({
+    projectRoot: legacyProject,
     serverRoot,
-    godotExecutable,
-    force: false
+    force: false,
+    repairToken: false,
+    tokenPath
   });
-  assert.equal(existsSync(join(workspaceRoot, ".codex", "config.toml")), true);
-  assert.equal(existsSync(join(nestedProject, ".codex", "config.toml")), false);
+  assert.deepEqual(legacyResult.legacyFiles, [
+    join(legacyProject, ".godot-mcp.json"),
+    join(legacyProject, ".codex", "config.toml")
+  ]);
+  assert.equal(readFileSync(join(legacyProject, ".godot-mcp.json"), "utf8"), "legacy project config\n");
 
   console.log("project-setup.test.mjs passed");
 } finally {

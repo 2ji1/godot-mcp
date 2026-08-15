@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
-import { cp, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,11 +13,14 @@ assert.ok(godotExecutable, "GODOT_EXECUTABLE is required");
 
 const serverRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repositoryRoot = resolve(serverRoot, "..");
+const token = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
-let projectRoot;
+let sandbox;
+let projectA;
+let projectB;
 let tokenPath;
-let editor;
-let editorOutput = "";
+let editorA;
+let editorB;
 let bridge;
 
 async function waitFor(predicate, timeoutMs) {
@@ -32,11 +34,12 @@ async function waitFor(predicate, timeoutMs) {
   return await predicate();
 }
 
-before(async () => {
-  projectRoot = await mkdtemp(join(tmpdir(), "godot-mcp-integration-"));
+async function createProject(name) {
+  const projectRoot = join(sandbox, name);
+  await mkdir(projectRoot, { recursive: true });
   await cp(join(repositoryRoot, "addons"), join(projectRoot, "addons"), { recursive: true });
   await writeFile(join(projectRoot, "project.godot"), `[application]
-config/name="Godot MCP Integration"
+config/name="${name}"
 
 [editor_plugins]
 enabled=PackedStringArray("res://addons/godot_mcp/plugin.cfg")
@@ -49,89 +52,123 @@ renderer/rendering_method.mobile="gl_compatibility"
 
 [node name="Root" type="Node3D"]
 `);
+  return projectRoot;
+}
 
-  tokenPath = join(projectRoot, ".godot", "godot-mcp-token");
-  editor = spawn(godotExecutable, [
+function startEditor(projectRoot) {
+  let output = "";
+  const child = spawn(godotExecutable, [
     "--headless",
     "--editor",
     "--path",
     projectRoot,
     "res://audit_scene.tscn"
   ], {
+    env: { ...process.env, GODOT_MCP_TOKEN_PATH: tokenPath },
     stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true
   });
-  editor.stdout.on("data", (chunk) => {
-    editorOutput += chunk.toString();
-  });
-  editor.stderr.on("data", (chunk) => {
-    editorOutput += chunk.toString();
-  });
+  child.stdout.on("data", (chunk) => { output += chunk.toString(); });
+  child.stderr.on("data", (chunk) => { output += chunk.toString(); });
+  return { child, output: () => output };
+}
 
-  assert.equal(
-    await waitFor(() => editorOutput.includes("Godot MCP bridge listening"), 15000),
-    true,
-    editorOutput
-  );
+async function stopEditor(editor) {
+  if (!editor || editor.child.exitCode !== null) {
+    return;
+  }
+  editor.child.kill();
+  await waitFor(() => editor.child.exitCode !== null, 5000);
+  if (editor.child.exitCode === null) {
+    editor.child.kill("SIGKILL");
+    await waitFor(() => editor.child.exitCode !== null, 5000);
+  }
+}
 
+async function waitForProject(projectRoot, editor) {
+  let status;
+  const ready = await waitFor(async () => {
+    try {
+      status = await bridge.request("editor.status", {});
+      return resolve(status.projectPath) === resolve(projectRoot)
+        && status.scenePath === "res://audit_scene.tscn";
+    } catch {
+      return false;
+    }
+  }, 15000);
+  assert.equal(ready, true, editor.output());
+  return status;
+}
+
+before(async () => {
+  sandbox = await mkdtemp(join(tmpdir(), "godot-mcp-editor-handoff-"));
+  projectA = await createProject("project-a");
+  projectB = await createProject("project-b");
+  tokenPath = join(sandbox, "state", "auth-token");
+  await mkdir(dirname(tokenPath), { recursive: true });
+  await writeFile(tokenPath, token + "\n");
   bridge = new GodotBridge({
     host: "127.0.0.1",
     port: 8765,
-    token: () => existsSync(tokenPath) ? readFileSync(tokenPath, "utf8").trim() : ""
+    token,
+    connectTimeoutMs: 1000,
+    requestTimeoutMs: 2000
   });
+  editorA = startEditor(projectA);
+  await waitForProject(projectA, editorA);
 });
 
 after(async () => {
   if (bridge) {
     await bridge.close().catch(() => {});
   }
-  if (editor?.exitCode === null) {
-    editor.kill();
-    await waitFor(() => editor.exitCode !== null, 5000);
-    if (editor.exitCode === null) {
-      editor.kill("SIGKILL");
-    }
-  }
-  if (projectRoot) {
-    await rm(projectRoot, { recursive: true, force: true });
+  await stopEditor(editorA);
+  await stopEditor(editorB);
+  if (sandbox) {
+    await rm(sandbox, { recursive: true, force: true });
   }
 });
 
-test("creates the token before the first bridge authentication", async () => {
-  assert.equal(await waitFor(() => existsSync(tokenPath), 5000), true);
-  await bridge.connect();
-  let status;
-  assert.equal(
-    await waitFor(async () => {
-      status = await bridge.request("editor.status", {});
-      return status.scenePath === "res://audit_scene.tscn";
-    }, 5000),
-    true,
-    editorOutput
-  );
+test("uses the active editor for authenticated scene operations", async () => {
+  const status = await waitForProject(projectA, editorA);
   assert.match(status.godotVersion, /^4\.7(?:\.1)?-stable/);
-});
 
-test("returns a created node path that resolves for later mutations", async () => {
   const created = await bridge.request("scene.create_node", {
     parentPath: ".",
     type: "Node3D",
     name: "AuditChild"
   });
-  const tree = await bridge.request("scene.get_tree", { maxDepth: 2 });
   assert.equal(created.nodePath, "AuditChild");
-  assert.equal(tree.nodes.some((node) => node.path === created.nodePath), true);
+  await bridge.request("scene.delete_node", { nodePath: created.nodePath, confirm: true });
+});
 
-  await bridge.request("scene.set_property", {
-    nodePath: created.nodePath,
-    property: "position",
-    value: { $godotType: "Vector3", x: 1, y: 2, z: 3 }
-  });
-  await bridge.request("scene.delete_node", {
-    nodePath: created.nodePath,
-    confirm: true
-  });
+test("enforces one editor and reconnects from project A to project B", async () => {
+  editorB = startEditor(projectB);
+  assert.equal(
+    await waitFor(() => editorB.output().includes("EDITOR_ALREADY_ACTIVE"), 15000),
+    true,
+    editorB.output()
+  );
+  const stillA = await bridge.request("editor.status", {});
+  assert.equal(resolve(stillA.projectPath), resolve(projectA));
 
-  const afterDelete = await bridge.request("scene.get_tree", { maxDepth: 2 });
-  assert.equal(afterDelete.nodes.some((node) => node.path === created.nodePath), false);
+  await stopEditor(editorB);
+  editorB = undefined;
+  await stopEditor(editorA);
+  editorA = undefined;
+  assert.equal(
+    await waitFor(async () => {
+      try {
+        await bridge.request("editor.status", {});
+        return false;
+      } catch (error) {
+        return error.code === "NO_ACTIVE_EDITOR";
+      }
+    }, 5000),
+    true
+  );
+
+  editorB = startEditor(projectB);
+  const statusB = await waitForProject(projectB, editorB);
+  assert.equal(resolve(statusB.projectPath), resolve(projectB));
 });

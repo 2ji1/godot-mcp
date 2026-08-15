@@ -13,11 +13,14 @@ func start() -> void:
     dispatcher = preload("res://addons/godot_mcp/rpc_dispatcher.gd").new()
     dispatcher.editor_plugin = editor_plugin
     if not dispatcher.initialize_token():
-        push_error("Godot MCP bridge failed to initialize authentication token")
+        var token_error = dispatcher.token_error
+        var code = str(token_error.get("code", "TOKEN_NOT_FOUND"))
+        var message = str(token_error.get("message", "Godot MCP shared authentication token is unavailable"))
+        push_error(code + ": " + message)
         return
     var error = bridge_server.create_server(PORT, HOST)
     if error != OK:
-        push_error("Godot MCP bridge failed to start: " + error_string(error))
+        push_error("EDITOR_ALREADY_ACTIVE: Another Godot editor already owns " + HOST + ":" + str(PORT) + " (" + error_string(error) + ")")
         return
     running = true
     set_process(true)

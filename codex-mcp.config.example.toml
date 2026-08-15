@@ -1,8 +1,8 @@
-# Save this as <trusted-codex-workspace>/.codex/config.toml.
-# Keep the godot-mcp server checkout separate from the target Godot project.
+# Add this once to the global Codex config (~/.codex/config.toml).
+# GODOT_EXECUTABLE is optional when godot is already on PATH.
 [mcp_servers.godot]
 command = "node"
 args = ["C:\\path\\to\\godot-mcp\\mcp-server\\dist\\index.js"]
-env = { GODOT_PROJECT_ROOT = "C:\\path\\to\\your-godot-project", GODOT_EXECUTABLE = "C:\\path\\to\\Godot.exe" }
+env = { GODOT_EXECUTABLE = "C:\\path\\to\\Godot.exe" }
 startup_timeout_sec = 10
 tool_timeout_sec = 60
