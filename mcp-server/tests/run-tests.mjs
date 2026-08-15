@@ -1,4 +1,4 @@
-import "./config.test.mjs";
+import "./user-token.test.mjs";
 import "./protocol.test.mjs";
 import "./godot-bridge.test.mjs";
 import "./tools.test.mjs";
