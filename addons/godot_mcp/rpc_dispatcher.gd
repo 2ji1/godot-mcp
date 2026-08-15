@@ -13,6 +13,9 @@ func _init() -> void:
     scene_operations = preload("res://addons/godot_mcp/scene_operations.gd").new()
     runtime_state = preload("res://addons/godot_mcp/runtime_state.gd").new()
 
+func initialize_token() -> bool:
+    return not _get_token().is_empty()
+
 func handle_json(raw: String) -> Dictionary:
     var parsed = JSON.parse_string(raw)
     if not parsed is Dictionary:
@@ -66,10 +69,12 @@ func _get_token() -> String:
     if FileAccess.file_exists(path):
         token = FileAccess.get_file_as_string(path).strip_edges()
     else:
-        token = str(Time.get_ticks_usec()) + "-" + str(randi())
+        var generated_token = str(Time.get_ticks_usec()) + "-" + str(randi())
         var file = FileAccess.open(path, FileAccess.WRITE)
-        if file != null:
-            file.store_string(token)
+        if file == null:
+            return ""
+        file.store_string(generated_token)
+        token = generated_token
     return token
 
 func _operation_response(request_id: String, result: Dictionary) -> Dictionary:
