@@ -4,6 +4,7 @@ import { callBridge } from "./editor.js";
 import type { GodotBridge } from "../godot-bridge.js";
 import { spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
+import { getActiveEditorStatus } from "../active-editor.js";
 
 export type RuntimeErrorRecord = {
   severity: "error" | "warning";
@@ -93,11 +94,18 @@ export class RuntimeManager {
   }
 }
 
+export async function runActiveProject(
+  bridge: Pick<GodotBridge, "request">,
+  runtime: Pick<RuntimeManager, "run">
+): Promise<RuntimeProcess> {
+  const status = await getActiveEditorStatus(bridge);
+  return runtime.run(status.projectPath);
+}
+
 export function registerRuntimeTools(
   server: McpServer,
   bridge: GodotBridge,
-  runtime: RuntimeManager,
-  projectRoot: string
+  runtime: RuntimeManager
 ): void {
   server.registerTool(
     "godot_run_project",
@@ -107,7 +115,7 @@ export function registerRuntimeTools(
     },
     async () => {
       try {
-        const result = await runtime.run(projectRoot);
+        const result = await runActiveProject(bridge, runtime);
         return {
           content: [{ type: "text" as const, text: JSON.stringify(result) }],
           structuredContent: result

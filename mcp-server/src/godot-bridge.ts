@@ -25,6 +25,7 @@ export class BridgeError extends Error {
 
 export class GodotBridge {
   private socket: WebSocket | undefined;
+  private connectPromise: Promise<void> | undefined;
   private readonly pending = new Map<string, PendingRequest>();
   private readonly connectTimeoutMs: number;
   private readonly requestTimeoutMs: number;
@@ -38,19 +39,31 @@ export class GodotBridge {
     if (this.socket?.readyState === WebSocket.OPEN) {
       return;
     }
+    if (this.connectPromise) {
+      return this.connectPromise;
+    }
+    this.connectPromise = this.openConnection();
+    try {
+      await this.connectPromise;
+    } finally {
+      this.connectPromise = undefined;
+    }
+  }
 
+  private async openConnection(): Promise<void> {
     const token = this.resolveToken();
     const socket = new WebSocket(`ws://${this.options.host}:${this.options.port}`, {
       headers: { "X-Godot-MCP-Token": token }
     });
     this.socket = socket;
     socket.on("message", (data) => this.handleMessage(data.toString()));
-    socket.on("close", () => this.rejectPending("BRIDGE_CLOSED", "Godot bridge connection closed"));
+    socket.on("close", () => this.handleSocketClosed(socket));
+    socket.on("error", () => undefined);
 
     await new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(() => {
         socket.terminate();
-        reject(new BridgeError("BRIDGE_TIMEOUT", "Timed out connecting to Godot editor"));
+        reject(new BridgeError("NO_ACTIVE_EDITOR", "No active Godot editor is listening"));
       }, this.connectTimeoutMs);
       socket.once("open", () => {
         clearTimeout(timeout);
@@ -58,7 +71,11 @@ export class GodotBridge {
       });
       socket.once("error", (error) => {
         clearTimeout(timeout);
-        reject(new BridgeError("BRIDGE_CONNECTION_FAILED", error.message));
+        const code = "code" in error ? String(error.code) : "";
+        const bridgeCode = ["ECONNREFUSED", "ENETUNREACH", "EHOSTUNREACH"].includes(code)
+          ? "NO_ACTIVE_EDITOR"
+          : "BRIDGE_CONNECTION_FAILED";
+        reject(new BridgeError(bridgeCode, error.message));
       });
     });
 
@@ -142,5 +159,13 @@ export class GodotBridge {
       request.reject(new BridgeError(code, message));
       this.pending.delete(id);
     }
+  }
+
+  private handleSocketClosed(socket: WebSocket): void {
+    if (this.socket !== socket) {
+      return;
+    }
+    this.socket = undefined;
+    this.rejectPending("BRIDGE_CLOSED", "Godot bridge connection closed");
   }
 }

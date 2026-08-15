@@ -15,7 +15,7 @@ async function main(): Promise<void> {
   const server = new McpServer({ name: "godot-editor-mcp", version: "0.1.0" });
 
   registerEditorTools(server, bridge);
-  registerRuntimeTools(server, bridge, runtime, "");
+  registerRuntimeTools(server, bridge, runtime);
   await server.connect(new StdioServerTransport());
 }
 

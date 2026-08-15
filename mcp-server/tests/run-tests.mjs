@@ -1,4 +1,5 @@
 import "./user-token.test.mjs";
+import "./active-editor.test.mjs";
 import "./protocol.test.mjs";
 import "./godot-bridge.test.mjs";
 import "./tools.test.mjs";
