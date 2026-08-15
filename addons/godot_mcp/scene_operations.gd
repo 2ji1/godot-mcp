@@ -39,6 +39,7 @@ func create_node(editor_plugin: EditorPlugin, parent_path: String, type_name: St
     var created = ClassDB.instantiate(type_name)
     if created == null or not created is Node:
         return _error("INVALID_CLASS", "Requested class is not a Node")
+    created.name = node_name
 
     var undo = editor_plugin.get_undo_redo()
     undo.create_action("Godot MCP: Create " + node_name)
