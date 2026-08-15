@@ -1,3 +1,5 @@
+# Save this as <trusted-codex-workspace>/.codex/config.toml.
+# Keep the godot-mcp server checkout separate from the target Godot project.
 [mcp_servers.godot]
 command = "node"
 args = ["C:\\path\\to\\godot-mcp\\mcp-server\\dist\\index.js"]

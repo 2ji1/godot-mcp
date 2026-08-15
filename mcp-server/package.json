@@ -6,7 +6,8 @@
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "test": "node tests/run-tests.mjs",
-    "test:godot": "node --test tests/godot-editor-integration.test.mjs"
+    "test:godot": "node --test tests/godot-editor-integration.test.mjs",
+    "setup-project": "npm run build && node dist/setup-project.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.20.2",
