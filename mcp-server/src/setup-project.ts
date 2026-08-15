@@ -19,6 +19,7 @@ export type ProjectSetupResult = {
   projectRoot: string;
   addonPath: string;
   tokenPath: string;
+  legacyFiles: string[];
 };
 
 function requirePath(path: string, description: string): void {
@@ -33,6 +34,10 @@ export function installProject(rawOptions: ProjectSetupOptions): ProjectSetupRes
   const sourceAddon = join(serverRoot, "addons", "godot_mcp");
   const addonPath = join(projectRoot, "addons", "godot_mcp");
   const tokenPath = resolveUserTokenPath({ tokenPath: rawOptions.tokenPath });
+  const legacyFiles = [
+    join(projectRoot, ".godot-mcp.json"),
+    join(projectRoot, ".codex", "config.toml")
+  ].filter((path) => existsSync(path));
 
   requirePath(join(projectRoot, "project.godot"), "Godot project file");
   requirePath(sourceAddon, "Godot MCP addon source");
@@ -49,7 +54,7 @@ export function installProject(rawOptions: ProjectSetupOptions): ProjectSetupRes
   mkdirSync(dirname(addonPath), { recursive: true });
   cpSync(sourceAddon, addonPath, { recursive: true, force: true });
 
-  return { projectRoot, addonPath, tokenPath };
+  return { projectRoot, addonPath, tokenPath, legacyFiles };
 }
 
 type ParsedArguments = {
@@ -121,6 +126,9 @@ function main(): void {
   console.log(`Godot MCP project setup complete: ${result.projectRoot}`);
   console.log(`Addon: ${result.addonPath}`);
   console.log(`Shared token: ${result.tokenPath}`);
+  for (const legacyFile of result.legacyFiles) {
+    console.log(`Legacy config (not modified): ${legacyFile}`);
+  }
   console.log("Enable Godot MCP in Project Settings > Plugins. Keep only the target editor open.");
 }
 

@@ -69,6 +69,23 @@ try {
     /Godot project file does not exist/
   );
 
+  const legacyProject = createProject("legacy-project");
+  mkdirSync(join(legacyProject, ".codex"), { recursive: true });
+  writeFileSync(join(legacyProject, ".godot-mcp.json"), "legacy project config\n");
+  writeFileSync(join(legacyProject, ".codex", "config.toml"), "[mcp_servers.godot]\n");
+  const legacyResult = installProject({
+    projectRoot: legacyProject,
+    serverRoot,
+    force: false,
+    repairToken: false,
+    tokenPath
+  });
+  assert.deepEqual(legacyResult.legacyFiles, [
+    join(legacyProject, ".godot-mcp.json"),
+    join(legacyProject, ".codex", "config.toml")
+  ]);
+  assert.equal(readFileSync(join(legacyProject, ".godot-mcp.json"), "utf8"), "legacy project config\n");
+
   console.log("project-setup.test.mjs passed");
 } finally {
   rmSync(sandbox, { recursive: true, force: true });

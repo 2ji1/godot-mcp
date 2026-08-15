@@ -54,6 +54,8 @@ The command:
 - creates or reuses one user-scoped shared authentication token;
 - does not write `.godot-mcp.json` or `.codex/config.toml` into the project.
 
+If old project configuration files are present, the command reports their paths but does not modify or delete them.
+
 If the addon already exists, update it explicitly:
 
 ```powershell
